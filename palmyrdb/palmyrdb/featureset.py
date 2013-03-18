@@ -1,8 +1,7 @@
 import csv
 import numpy as np
 from sklearn.preprocessing import scale
-from numpy.ma.core import mean, std, asarray, array
-from numpy.lib.function_base import median, percentile
+from numpy.ma.core import asarray
 from pickle import dump,load
 import re
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -16,448 +15,10 @@ from palmyrdb.converter import TypeConverter, FLOAT_TYPE, INT_TYPE, TEXT_TYPE,NO
 import numpy
 from copy import copy
 import math
+from palmyrdb.script import _exec_func_code
+from palmyrdb.model import ModelInfo, CLASSIFICATION_MODEL, REGRESSION_MODEL
+from palmyrdb.features import Feature
 
-
-
-def _exec_func_code(function_code,*args):
-    exec(function_code)
-    return function(*args)
-
-def _freqdist(values):
-        freq = {}
-        values_len = float(len(values))
-        for value in values:
-            if isinstance(value,float):
-                value = round(value)
-            try:
-                freq[value] +=1
-            except KeyError:
-                freq[value] = 1
-        for value, count in freq.items():
-            freq[value] = round(freq[value]/values_len * 100,4)
-        
-        return freq
-    
-def _check_is_sentence(documents):
-    
-    for doc in documents:
-        if ' ' in doc:
-            return True
-    return False
-
-def score_tfidf_freq(tfidfs):
-    
-    return float(mean(tfidfs))
-    #return sum(map(lambda tfidf : 1 if tfidf >=0.05 else 0, tfidfs)) / float(len(tfidfs))
- 
-def _word_tfidf_dist(documents):
-    words_tfidf = {}
-    
-    if len(documents) > 0: 
-        if _check_is_sentence(documents): #if document contains only 1 or 2 or 3 chars --> acronyms
-            try:
-                v = TfidfVectorizer(ngram_range=(1,2),max_features=50)
-                matrix = v.fit_transform(documents).todense()
-                
-                for vocabulary in v.vocabulary_.items():
-                    word = vocabulary[0]
-                    indice = vocabulary[1]
-                    words_tfidf[word] = score_tfidf_freq(matrix[:,indice]) 
-            except ValueError:
-                return {}
-        else:
-            return _freqdist(documents)
-        
-    
-    return words_tfidf
-
-v = TfidfVectorizer(ngram_range=(1,2))
-def _decode_document(document):
-    
-    return v.build_analyzer()(document)
-    
-
-class Feature():
-    table = None
-    name = None
-    _type_name = None
-    _values = None                 #heavy
-    _virtual = None
-    seq_order = 0
-    _is_class = None
-    is_sparse = None
-    _usable = None
-    classes = None                #heavy?
-    common_value = None
-    min_value = None
-    max_value = None
-    mean_value = None
-    median_value =None        
-    freq_dist = None              #heavy if no class
-    num_unique_values = None
-    
-    default_function_code = None
-    virtual_function_code = None
-    first_quarter_percentile = None
-    third_quarter_percentile = None
-    
-    """
-        Create a feature
-    """
-    @staticmethod
-    def create_feature(table,name,type_name,values,virtual=True):
-        
-        return Feature(table,name,type_name,values,virtual)
-    
-    def __init__(self,table,name,type_name,values,virtual=True):
-        self.table = table
-        self.name = name
-        self._type_name = type_name
-        self.set_values(values)
-        self._virtual = virtual
-        self._usable = True
-        self.seq_order = 0
-        self._is_class = None
-        self.is_sparse = None
-        self.classes = None
-        self.common_value = None
-        self.min_value = None
-        self.max_value = None
-        self.mean_value = None
-        self.median_value =None
-        self.std_dev = None
-        self.first_quarter_percentile = None
-        self.third_quarter_percentile = None
-        self.freq_dist = None
-        self.num_unique_values =None
-        self.default_function_code = "function = lambda table,feature,row_index : feature['common-value']"
-        self.virtual_function_code = None
-        
-     
-    """
-        Is discarded feature?
-    """   
-    def is_usable(self):
-        return self._usable
-    
-    """
-        Is virtual feature?
-    """ 
-    def is_virtual(self):
-        return self._virtual
-    
-    """
-        Get the defined values and force typing
-        Long running task
-    """  
-    def get_defined_values(self,row_ids=None):
-        if self.get_type() == INT_TYPE or self.get_type() == FLOAT_TYPE:
-            return map(lambda x : float(x),filter (lambda a: a != NONE_VALUE, self.get_values(row_ids)))
-        elif self.get_type() == TEXT_TYPE:
-            return map(lambda x : str(x),filter (lambda a: a != NONE_VALUE, self.get_values(row_ids)))
-        else:
-            return filter (lambda a: a != NONE_VALUE, self.get_values(row_ids))
-    """
-        Get the undefined values
-        Long running task
-    """  
-    def get_undefined_values(self,row_ids=None):
-        return filter (lambda a: a == NONE_VALUE, self.get_values(row_ids))
-   
-    """
-        Auto discover the feature properties while creating the analysis object
-        Long running task
-    """  
-    def discover(self):
-        
-        #compute stats
-        self.refresh()
-        
-        #classes are fixed by discover
-        self.set_class((1.0 - (float(self.num_unique_values) / float(self.num_values))) > 0.99)
-        self.classes = self.freq_dist.keys() #classes are fixed by discover
-        self.default_function_code = "function = lambda table,feature,row_index : feature.common_value"    
-           
-        
-    """
-       Is this feature is allowed for target (unclassed text is not allowed)
-        Long running task
-    """  
-    def target_allowed(self):
-        return not (self.get_type() == TEXT_TYPE and not self.has_class())
-    
-    """
-       Get feature type - type is set at feature creation only
-        Long running task
-    """  
-    def get_type(self):
-        return self._type_name
-    
-    
-    """
-        Define if the feature is a class Feature
-    """  
-    def set_class(self,is_class):
-        self._is_class = is_class
-    
-    """
-        Is a classed feature?
-    """            
-    def has_class(self):
-        return self._is_class
-    
-    def filter(self,filter_function=None):
-        if filter_function is None:
-            values = self.get_defined_values()
-        else:
-            ids = self.table.get_row_ids(filter_function)
-            values = self.get_defined_values(row_ids=ids)
-        
-        return values
-    
-    def get_frequency_distribution(self,filter_function=None):
-        
-        values = self.filter(filter_function)
-
-        if self.get_type() == TEXT_TYPE:
-            return _word_tfidf_dist(values)
-        else:
-            return _freqdist(values)
-        
-        
-    
-    def _compute_stats(self):
-        if self.get_type() == INT_TYPE or self.get_type() == FLOAT_TYPE:
-            distinct_values = self.freq_dist.keys()
-            self.min_value = min(distinct_values)
-            self.max_value = max(distinct_values)
-            values = self.get_defined_values()
-            self.mean_value = mean(values)
-            self.median_value = median(values)
-            self.first_quarter_percentile = percentile(values,25)
-            self.third_quarter_percentile = percentile(values,75)
-            self.std_dev = std(values)
-    
-    """
-        Refresh the feature properties
-        Long running task (value metrics)
-    """  
-    def refresh(self):
-        
-        self.num_values = len(self.get_values())
-        self.num_undefined_value = len(self.get_undefined_values())
-        
-        #compute the density distribution (count or tfidf)
-        self.freq_dist = self.get_frequency_distribution()
-        
-        #is completely dense
-        self.is_sparse = self.num_undefined_value > 0
-        
-        self.num_unique_values = len(self.freq_dist.keys())
-        
-        #what is the most used value
-        sorted_fd = sorted(self.freq_dist.iteritems(), key=lambda (k,v): v*-1)
-        self.common_value, common_rank = sorted_fd[0]
-        
-        #compute feature statistics
-        self._compute_stats()
-    
-    """
-        Get the feature values - must be externalized to support large values
-    """        
-    def get_values(self,row_ids=None):
-        
-        if row_ids is not None:
-            rows = map(lambda row_id : self.get_value(row_id),row_ids)
-            return rows
-        else:
-            return self._values
-    
-    
-    """
-        Get a feature-row value - must be externalized to support large values
-    """
-    def get_value(self,row_index):
-        if self.get_type() == TEXT_TYPE:
-            return str(self._values[row_index])
-        else:
-            return self._values[row_index]
-    
-    """
-        Set the feature values - must be externalized to support large values
-    """
-    def set_values(self,values):
-        self._values = values
-    
-    # reshape the target value fot the dataset
-    def _reshape_target(self,row_index):
-        value = self.get_value(row_index)
-        
-        #if undefined value, then compute the default value function
-        if value == NONE_VALUE:        
-            value = _exec_func_code(self.default_function_code,self.table,self,row_index)
-        
-        #Convert TEXT target value as Int value for model compliance            
-        if self.get_type() == TEXT_TYPE:
-            assert self.has_class(),"Unclassed Text Feature cannot be a target"
-            value = self.classes.index(value)
-        return value
-    
-    # reshape the non target value fot the dataset
-    def _reshape_value(self,row_index):
-        reshaped_values = []
-        value = self.get_value(row_index)
-        
-        if value == NONE_VALUE:        
-            value = _exec_func_code(self.default_function_code,self.table,self,row_index)
-        
-                   
-        if self.has_class():
-            if len(self.classes)>2: 
-                for feature in self.classes:
-                    if value == feature:
-                        reshaped_values.append(1.0)
-                    else:
-                        reshaped_values.append(0.0)
-            else: #Binary class
-                if self.get_type() == TEXT_TYPE:
-                    if value == self.common_value:
-                        reshaped_values.append(1.0)
-                    else:
-                        reshaped_values.append(0.0)
-                else:
-                    reshaped_values.append(float(value))
-        else: # no class
-            if self.get_type() == TEXT_TYPE: #text
-                for feature in self.classes:
-                    if feature in _decode_document(unicode(value)) :
-                        reshaped_values.append(1.0)
-                    else:
-                        reshaped_values.append(0.0)
-            else: #numeric
-                reshaped_values.append(float(value))
-        
-        return reshaped_values
-    
-    # reshape the header for display
-    def _reshape_header(self):
-        headers = []
-        header = self.name
-        
-        if self.is_virtual():
-            header += '*'
-            
-        if self.has_class():
-            if len(self.classes)>2:
-                for feature in self.classes:
-                    headers.append(header+"=" + str(feature))
-            else:
-                headers.append(header)
-        else:       
-            headers.append(header)
-        
-        return headers
-    
-    """
-        Update virtual feature and compute the feature values (long task)
-    """
-    def update_feature(self):
-        if self.is_virtual():
-            values = self.table._load_virtual_values(self.virtual_function_code)
-            self.set_values(values)
-            self.discover()
-
-    def get_distribution(self,centile=False):
-        freq_dist = []
-        
-        for category in self.classes:
-               
-                group_freq = self.freq_dist
-                serie = {
-                         'name' : self.name + "=" + unicode(int(category) if self.get_type()==INT_TYPE else category),
-                         'data' : map(lambda category : round(group_freq[category]*100 if centile else group_freq[category] ,4) if category in group_freq else 0 ,self.classes)
-                         }
-                freq_dist.append(serie)
-        return freq_dist
-
-
-    def get_distribution_by(self, feature,centile=False):
-        freq_dist = []
-        
-        for category in feature.classes:
-                filter_function = lambda table,row_index : table.get_feature(feature.name).is_value_equal(row_index,category) 
-                group_freq = self.get_frequency_distribution(filter_function)
-                
-                serie = {
-                         'name' : feature.name + "=" + unicode(int(category) if feature.get_type()==INT_TYPE else category),
-                         'data' : map(lambda category : round(group_freq[category]*100 if centile else group_freq[category] ,4) if category in group_freq else 0 ,self.classes)
-                         }
-                freq_dist.append(serie)
-        return freq_dist
-    
-    def get_distribution_stats_by(self,feature,centile=False):
-        result = []
-        for category in feature.classes:
-            filter_function = lambda table,row_index : table.get_feature(feature.name).is_value_equal(row_index,category) 
-            group_values = self.filter(filter_function)
-            
-            if (len(group_values) >1):
-                stat_min = min(group_values)
-                stat_max = max(group_values)
-                stat_median = median(group_values)
-                stat_first_quartile = percentile(group_values,25)
-                stat_third_quartile = percentile(group_values,75)
-                
-                result.append([stat_min,stat_first_quartile,stat_median, stat_third_quartile,stat_max])
-        return result
-    
-    def is_value_equal(self,row_index, value_to_compare):
-
-        if self.get_type() == TEXT_TYPE: #case insensitive comparaison
-            return value_to_compare.lower() in self.get_value(row_index).lower()
-        elif self.get_type() == FLOAT_TYPE:
-            return round(float(self.get_value(row_index))) == round(float(value_to_compare))
-        else:
-            return self.get_value(row_index) == value_to_compare
-        
-    def get_correlation_with(self,feature,filter_function = None):
-        row_ids = self.table.get_row_ids(filter_function)
-        return map(lambda i : [self.get_value(i),feature.get_value(i)],row_ids)
-        
-        
-CLASSIFICATION_MODEL = 'CLAS'
-REGRESSION_MODEL = 'REGR'
-CLUSTERING_MODEL = 'CLUS'
-
-class ModelInfo():
-    name = None
-    model_type = None
-    selected_features = None
-    score = None
-    metrics = None
-    target = None
-    target_class = None
-    
-    def __init__(self,name):
-        self.name = name
-        self.model_type = None
-        self.selected_features = None
-        self.score = None
-        self.metrics = None
-        self.target = None
-        self.target_class = None
-
-    def get_properties(self):
-        props = {
-                 'name' : self.name,
-                 'model_type' : self.model_type,
-                 'selected_features' : self.selected_features,
-                 'score' : self.score,
-                 'metrics' : self.metrics,
-                 'target' : self.target,
-                 'target_class' : self.target_class
-                 }
-        return props
 
 """
     Set of feature
@@ -509,15 +70,15 @@ class FeatureTable():
         
         if name in self._features: #Feature already exist
             feature = self.get_feature(name)
-            feature.set_values(values)
+            feature._set_values(values)
             feature.virtual_function_code = virtual_function_code
-            feature.refresh()
+            feature._refresh()
 
         else:
             feature = Feature.create_feature(self,name,type_name,values,virtual)
             feature.seq_order = self._get_next_seq_order()
             feature.virtual_function_code = virtual_function_code
-            feature.discover()
+            feature._discover()
             self._features[name] = feature
         return feature
     
@@ -541,6 +102,7 @@ class FeatureTable():
             self.add_feature(name, feature.get_type(), feature.virtual_function_code)
     """
         Add a virtual feature and compute the feature values (long task)
+        **PUBLIC**
     """
     def add_feature(self,name,type_name,function_code):
         values = self._load_virtual_values(function_code)
@@ -558,6 +120,7 @@ class FeatureTable():
         return ftable
     """
         Create or apply a feature table from a CSV file based on headers (long task)
+        **PUBLIC**
     """
     def load_from_csv(self,filename):
         converter = TypeConverter()
@@ -570,27 +133,39 @@ class FeatureTable():
             feature_type = converter.get_type(column_values)
             self._load_feature(name,feature_type,column_values)
         return self
-    
+    """
+        **PUBLIC**
+    """
     def get_features(self):
         return sorted(self._features.iteritems(), key=lambda (k,v): v.seq_order)
-    
+    """
+        **PUBLIC**
+    """
     def get_feature_names(self):
         return [ name for (name,feature) in sorted(self._features.iteritems(), key=lambda (k,v): v.seq_order)]
-    
+    """
+        **PUBLIC**
+    """
     def get_feature(self,name):
         return self._features[name]
-    
+    """
+        **PUBLIC**
+    """
     def has_feature(self,name):
         return name in self._features
-    
+    """
+        **PUBLIC**
+    """
     def set_feature(self,name,feature):
         self._features[name] = feature
-    
+    """
+        **PUBLIC**
+    """
     def get_value(self,name,row_index):
-        return self.get_feature(name).get_value(row_index)
+        return self.get_feature(name)._get_value(row_index)
     
     def has_value(self,name,row_index):
-        return self.get_feature(name).get_value(row_index) != NONE_VALUE
+        return self.get_feature(name)._get_value(row_index) != NONE_VALUE
     
     def get_shaped_value(self,name,row_index):
         return self.get_feature(name)._reshape_value(row_index)
@@ -607,17 +182,23 @@ class FeatureTable():
     
     def get_row_count(self):
         return self._row_count
-    
+    """
+        **PUBLIC**
+    """
     def set_target(self,name):
         self.target = name
         self.use_feature(name,use=True)
-        
+    """
+        **PUBLIC**
+    """    
     def reset_target(self):
         self.target = None
         
     def get_selected_feature_names(self):
         return [ f[0] for f in filter(lambda (k,v) : v.is_usable() and k != self.target,self.get_features())]
-    
+    """
+        **PUBLIC**
+    """
     def use_feature(self,name,use=False):
         self.get_feature(name)._usable = use
     
@@ -710,7 +291,7 @@ class FeatureTable():
                 row_repr += str(row[i])  +"\t"
             print row_repr
             count +=1
-
+    """
     def refine(self,filter_function_code):
         
         row_to_filter = []
@@ -725,14 +306,19 @@ class FeatureTable():
         self._row_count -= len(row_to_filter)
         self.refresh()
         return self._row_count
-    
+    """
+    """
+        **PUBLIC**
+    """
     @staticmethod
     def open(file_path):
         f = open(file_path,'rb')
         obj = load(f)
         f.close()
         return obj
-    
+    """
+        **PUBLIC**
+    """
     def save(self,file_path):
         dir_path = file_path.split(os.sep)[:-1]
         dir_path = os.sep.join(dir_path)
@@ -744,7 +330,9 @@ class FeatureTable():
         dump(self,f)
         f.close()
         
-
+    """
+        **PUBLIC**
+    """
     def build_model(self,C=1.0,kernel='rbf'):
         dataset = {}
         if self.target is not None: #supervised model
@@ -790,12 +378,16 @@ class FeatureTable():
                 return model,model_info
         else: #clustering model
             return None,None
-        
+    """
+        **PUBLIC**
+    """    
     def remove_feature(self,name):
         assert self.get_feature(name).is_virtual(), "The feature %s has to be virtual to be removed" % name
             
         del self._features[name]
-        
+    """
+        **PUBLIC**
+    """    
     def select_best_features(self,k=10):
         if self.target is not None: #supervised model
             dataset_X,dataset_y = self.get_dataset(scale_X=False)
@@ -825,7 +417,9 @@ class FeatureTable():
             open_file_object.writerow(row)
             i += 1
         
-        
+    """
+        **PUBLIC**
+    """    
     def apply_prediction(self,model_name,input_filename, output_filename):
         ftable = copy(self) #copy because data are hold inside the object - to be decomissioned
         ftable.load_from_csv(input_filename)
@@ -850,7 +444,9 @@ class FeatureTable():
             elif target_feature.get_type() == FLOAT_TYPE:
                 pred_y = pred_y.astype(np.float64)
         self._write_prediction(pred_y, input_filename, output_filename)
-        
+    """
+        **PUBLIC**
+    """    
     def get_datatable(self,filter_function_code=None,page=100,from_page=0):
         result = {}
 
@@ -875,7 +471,7 @@ class FeatureTable():
             count += 1
             
             for name,feature in self.get_features():
-                row.append(self.get_feature(name).get_value(row_index))
+                row.append(self.get_feature(name)._get_value(row_index))
             result['rows'].append(row)
         
         result['num_total_rows'] = self.get_row_count()
