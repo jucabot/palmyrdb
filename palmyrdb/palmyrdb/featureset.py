@@ -46,6 +46,126 @@ class FeatureTable():
         self._seq_order +=1
         return self._seq_order
     
+    def _get_virtual_features(self):
+        virtual_features = filter(lambda (k,v) : v.is_virtual(),self.get_features())
+        
+        return virtual_features
+    
+    """
+        **PUBLIC**
+    """
+    def get_features(self):
+        return sorted(self._features.iteritems(), key=lambda (k,v): v.seq_order)
+    """
+        **PUBLIC**
+    """
+    def get_feature_names(self):
+        return [ name for (name,feature) in sorted(self._features.iteritems(), key=lambda (k,v): v.seq_order)]
+    """
+        **PUBLIC**
+    """
+    def get_feature(self,name):
+        return self._features[name]
+    """
+        **PUBLIC**
+    """
+    def has_feature(self,name):
+        return name in self._features
+    """
+        **PUBLIC**
+    """
+    def set_feature(self,name,feature):
+        self._features[name] = feature
+    
+    def get_row_count(self):
+        return self._row_count
+    """
+        **PUBLIC**
+    """
+    def set_target(self,name):
+        self.target = name
+        self.use_feature(name,use=True)
+    """
+        **PUBLIC**
+    """    
+    def reset_target(self):
+        self.target = None
+        
+    def get_selected_feature_names(self):
+        return [ f[0] for f in filter(lambda (k,v) : v.is_usable() and k != self.target,self.get_features())]
+    """
+        **PUBLIC**
+    """
+    def use_feature(self,name,use=False):
+        self.get_feature(name)._usable = use
+    
+    def discard_features(self,names):
+        for name in names:
+            self.use_feature(name,use=False)
+    
+    def display_features(self):
+        
+        headers = ["Name","Type","class","usable","sparse","virtual","common value"]
+        
+        print '\t'.join(headers)
+        print '-' * 32 * len(headers)
+        
+        for name, feature in self.get_features() :   
+            print '%s\t' * len(headers) % (name if name != self.target else name + '(*)' ,feature.get_type(),feature.has_class() if feature.has_class() == False else feature.num_unique_values ,feature.is_usable(),feature.is_sparse,feature.is_virtual(),feature.common_value)
+    """
+        Define if the feature may be part of the dataset, based on is_usable
+    """
+    def _have_to_discard(self,feature):
+        return not (feature.is_usable() or feature.name == self.target) #or (feature.get_type() == TEXT_TYPE and not feature.has_class()) #text
+    
+    """
+        Return the name of the features in the dataset
+    """
+    def get_dataset_labels(self):
+        headers = []
+        for name,feature in self.get_features():
+            if not self._have_to_discard(feature):
+                if name != self.target:
+                    headers.extend(self.get_feature(name)._reshape_header())
+        return headers
+    
+    """
+        **PUBLIC**
+    """    
+    def remove_feature(self,name):
+        assert self.get_feature(name).is_virtual(), "The feature %s has to be virtual to be removed" % name
+            
+        del self._features[name]
+    
+    
+    """
+        **PUBLIC**
+    """
+    @staticmethod
+    def open(file_path):
+        f = open(file_path,'rb')
+        obj = load(f)
+        f.close()
+        return obj
+    """
+        **PUBLIC**
+    """
+    def save(self,file_path):
+        dir_path = file_path.split(os.sep)[:-1]
+        dir_path = os.sep.join(dir_path)
+        
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+        
+        f = open(file_path,'wb')
+        dump(self,f)
+        f.close()
+    
+    
+    
+    """
+    **************************************************************************************
+    """
     
     def _load_columns(self,reader,headers):
         converter = TypeConverter()
@@ -82,10 +202,6 @@ class FeatureTable():
             self._features[name] = feature
         return feature
     
-    def _get_virtual_features(self):
-        virtual_features = filter(lambda (k,v) : v.is_virtual(),self.get_features())
-        
-        return virtual_features
     
     #Compute virtual feature values (long task)    
     def _load_virtual_values(self,function_code):
@@ -133,93 +249,18 @@ class FeatureTable():
             feature_type = converter.get_type(column_values)
             self._load_feature(name,feature_type,column_values)
         return self
-    """
-        **PUBLIC**
-    """
-    def get_features(self):
-        return sorted(self._features.iteritems(), key=lambda (k,v): v.seq_order)
-    """
-        **PUBLIC**
-    """
-    def get_feature_names(self):
-        return [ name for (name,feature) in sorted(self._features.iteritems(), key=lambda (k,v): v.seq_order)]
-    """
-        **PUBLIC**
-    """
-    def get_feature(self,name):
-        return self._features[name]
-    """
-        **PUBLIC**
-    """
-    def has_feature(self,name):
-        return name in self._features
-    """
-        **PUBLIC**
-    """
-    def set_feature(self,name,feature):
-        self._features[name] = feature
+    
     """
         **PUBLIC**
     """
     def get_value(self,name,row_index):
         return self.get_feature(name)._get_value(row_index)
-    
+    """
+        **PUBLIC**
+    """
     def has_value(self,name,row_index):
         return self.get_feature(name)._get_value(row_index) != NONE_VALUE
     
-    def get_shaped_value(self,name,row_index):
-        return self.get_feature(name)._reshape_value(row_index)
-    
-    def get_shaped_row(self,names,row_index,scale_row=True):
-        row = []
-        for name in names:
-            row.extend(self.get_shaped_value(name, row_index))
-        
-        if scale_row:
-            return scale(np.array([row]))
-        else:
-            return np.array([row])
-    
-    def get_row_count(self):
-        return self._row_count
-    """
-        **PUBLIC**
-    """
-    def set_target(self,name):
-        self.target = name
-        self.use_feature(name,use=True)
-    """
-        **PUBLIC**
-    """    
-    def reset_target(self):
-        self.target = None
-        
-    def get_selected_feature_names(self):
-        return [ f[0] for f in filter(lambda (k,v) : v.is_usable() and k != self.target,self.get_features())]
-    """
-        **PUBLIC**
-    """
-    def use_feature(self,name,use=False):
-        self.get_feature(name)._usable = use
-    
-    def discard_features(self,names):
-        for name in names:
-            self.use_feature(name,use=False)
-    
-    def display_features(self):
-        
-        headers = ["Name","Type","class","usable","sparse","virtual","common value"]
-        
-        print '\t'.join(headers)
-        print '-' * 32 * len(headers)
-        
-        for name, feature in self.get_features() :   
-            print '%s\t' * len(headers) % (name if name != self.target else name + '(*)' ,feature.get_type(),feature.has_class() if feature.has_class() == False else feature.num_unique_values ,feature.is_usable(),feature.is_sparse,feature.is_virtual(),feature.common_value)
-    """
-        Define if the feature may be part of the dataset, based on is_usable
-    """
-    def _have_to_discard(self,feature):
-        return not (feature.is_usable() or feature.name == self.target) #or (feature.get_type() == TEXT_TYPE and not feature.has_class()) #text
     
     """
         Transform and return the feature data as machine learning compliant array
@@ -256,79 +297,6 @@ class FeatureTable():
             ds_y = np.array(y)
         
         return ds_X,ds_y
-    
-    """
-        Return the name of the features in the dataset
-    """
-    def get_dataset_labels(self):
-        headers = []
-        for name,feature in self.get_features():
-            if not self._have_to_discard(feature):
-                if name != self.target:
-                    headers.extend(self.get_feature(name)._reshape_header())
-        return headers
-    
-    def display_dataset(self,sample=10):
-        
-        X, y = self.get_dataset(scale_X=False)
-        headers = self.get_dataset_labels()
-
-        label_headers = "%-14s | " % self.target if self.target != None else ""
-        sep = ""
-        for name in headers:
-            label_headers += name  +"\t"
-            sep += "----------------------"
-        print label_headers
-        print sep
-        
-        count=0
-        for row in X:
-            
-            if count>sample:
-                break
-            row_repr = "%-14s | " % str(y[count]) if  y != None else ""
-            for i in range(len(row)):
-                row_repr += str(row[i])  +"\t"
-            print row_repr
-            count +=1
-    """
-    def refine(self,filter_function_code):
-        
-        row_to_filter = []
-        for row_index in range(self._row_count):
-            
-            if _exec_func_code(filter_function_code,self,row_index) == False:
-                row_to_filter.append(row_index)
-            
-        for name,feature in self.get_features():
-            feature.values = [i for j, i in enumerate(feature.get_values()) if j not in row_to_filter]
-            
-        self._row_count -= len(row_to_filter)
-        self.refresh()
-        return self._row_count
-    """
-    """
-        **PUBLIC**
-    """
-    @staticmethod
-    def open(file_path):
-        f = open(file_path,'rb')
-        obj = load(f)
-        f.close()
-        return obj
-    """
-        **PUBLIC**
-    """
-    def save(self,file_path):
-        dir_path = file_path.split(os.sep)[:-1]
-        dir_path = os.sep.join(dir_path)
-        
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
-        
-        f = open(file_path,'wb')
-        dump(self,f)
-        f.close()
         
     """
         **PUBLIC**
@@ -381,13 +349,6 @@ class FeatureTable():
     """
         **PUBLIC**
     """    
-    def remove_feature(self,name):
-        assert self.get_feature(name).is_virtual(), "The feature %s has to be virtual to be removed" % name
-            
-        del self._features[name]
-    """
-        **PUBLIC**
-    """    
     def select_best_features(self,k=10):
         if self.target is not None: #supervised model
             dataset_X,dataset_y = self.get_dataset(scale_X=False)
@@ -406,6 +367,7 @@ class FeatureTable():
            
         else:
             return None
+        
     def _write_prediction(self,pred_y,input_filename, output_filename):
         open_file_object = csv.writer(open(output_filename, "wb"))
         pred_file_object = csv.reader(open(input_filename, 'rb')) #Load in the csv file
@@ -485,7 +447,7 @@ class FeatureTable():
         result['has_next'] = True if page_num < num_pages else False
         return result
     
-    def get_row_ids(self,filter_function=None):
+    def _get_row_ids(self,filter_function=None):
         row_ids = []
         if filter_function is not None:
             for row_index in range(self.get_row_count()): 

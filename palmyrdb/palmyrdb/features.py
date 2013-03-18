@@ -94,7 +94,6 @@ class Feature():
     """
     @staticmethod
     def create_feature(table,name,type_name,values,virtual=True):
-        
         return Feature(table,name,type_name,values,virtual)
     
     def __init__(self,table,name,type_name,values,virtual=True):
@@ -134,6 +133,53 @@ class Feature():
     def is_virtual(self):
         return self._virtual
     
+           
+    """
+       Get feature type - type is set at feature creation only
+        **PUBLIC**
+    """  
+    def get_type(self):
+        return self._type_name
+    
+    
+    """
+        Define if the feature is a class Feature
+        **PUBLIC**
+    """  
+    def set_class(self,is_class):
+        self._is_class = is_class
+    
+    """
+        Is a classed feature?
+       
+        **PUBLIC**
+    """            
+    def has_class(self):
+        return self._is_class
+
+    
+    # reshape the header for display
+    def _reshape_header(self):
+        headers = []
+        header = self.name
+        
+        if self.is_virtual():
+            header += '*'
+            
+        if self.has_class():
+            if len(self.classes)>2:
+                for feature in self.classes:
+                    headers.append(header+"=" + str(feature))
+            else:
+                headers.append(header)
+        else:       
+            headers.append(header)
+        
+        return headers
+
+    """
+    *************************************************************************************
+    """
     """
         Get the defined values and force typing
         Long running task
@@ -165,43 +211,12 @@ class Feature():
         self.set_class((1.0 - (float(self.num_unique_values) / float(self.num_values))) > 0.99)
         self.classes = self.freq_dist.keys() #classes are fixed by discover
         self.default_function_code = "function = lambda table,feature,row_index : feature.common_value"    
-           
-        
-    """
-       Is this feature is allowed for target (unclassed text is not allowed)
-    """
-    """  
-    def target_allowed(self):
-        return not (self.get_type() == TEXT_TYPE and not self.has_class())
-    """
-    """
-       Get feature type - type is set at feature creation only
-        **PUBLIC**
-    """  
-    def get_type(self):
-        return self._type_name
-    
-    
-    """
-        Define if the feature is a class Feature
-        **PUBLIC**
-    """  
-    def set_class(self,is_class):
-        self._is_class = is_class
-    
-    """
-        Is a classed feature?
-       
-        **PUBLIC**
-    """            
-    def has_class(self):
-        return self._is_class
     
     def _filter(self,filter_function=None):
         if filter_function is None:
             values = self._get_defined_values()
         else:
-            ids = self.table.get_row_ids(filter_function)
+            ids = self.table._get_row_ids(filter_function)
             values = self._get_defined_values(row_ids=ids)
         
         return values
@@ -333,24 +348,6 @@ class Feature():
         
         return reshaped_values
     
-    # reshape the header for display
-    def _reshape_header(self):
-        headers = []
-        header = self.name
-        
-        if self.is_virtual():
-            header += '*'
-            
-        if self.has_class():
-            if len(self.classes)>2:
-                for feature in self.classes:
-                    headers.append(header+"=" + str(feature))
-            else:
-                headers.append(header)
-        else:       
-            headers.append(header)
-        
-        return headers
     
     """
         Update virtual feature and compute the feature values (long task)
@@ -408,6 +405,6 @@ class Feature():
         **PUBLIC**
     """    
     def get_correlation_with(self,feature,filter_function = None):
-        row_ids = self.table.get_row_ids(filter_function)
+        row_ids = self.table._get_row_ids(filter_function)
         return map(lambda i : [self._get_value(i),feature._get_value(i)],row_ids)
         
