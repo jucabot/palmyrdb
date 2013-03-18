@@ -34,7 +34,7 @@ def _freqdist(values):
             except KeyError:
                 freq[value] = 1
         for value, count in freq.items():
-            freq[value] = freq[value]/values_len
+            freq[value] = round(freq[value]/values_len * 100,4)
         
         return freq
     
@@ -223,6 +223,8 @@ class Feature():
             return _word_tfidf_dist(values)
         else:
             return _freqdist(values)
+        
+        
     
     def _compute_stats(self):
         if self.get_type() == INT_TYPE or self.get_type() == FLOAT_TYPE:
