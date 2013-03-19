@@ -22,7 +22,7 @@ def _freqdist(values):
             except KeyError:
                 freq[value] = 1
         for value, count in freq.items():
-            freq[value] = round(freq[value]/values_len * 100,4)
+            freq[value] = round(freq[value]/values_len * 100,2)
         
         return freq
     
@@ -35,7 +35,7 @@ def _check_is_sentence(documents):
 
 def score_tfidf_freq(tfidfs):
     
-    return float(mean(tfidfs))
+    return round(float(mean(tfidfs)*100),2)
     #return sum(map(lambda tfidf : 1 if tfidf >=0.05 else 0, tfidfs)) / float(len(tfidfs))
  
 def _word_tfidf_dist(documents):
@@ -69,7 +69,6 @@ class Feature():
     table = None
     name = None
     _type_name = None
-    _values = None                 #heavy
     _virtual = None
     seq_order = 0
     _is_class = None
@@ -93,14 +92,13 @@ class Feature():
         Create a feature
     """
     @staticmethod
-    def create_feature(table,name,type_name,values,virtual=True):
-        return Feature(table,name,type_name,values,virtual)
+    def create_feature(table,name,type_name,virtual=True):
+        return Feature(table,name,type_name,virtual)
     
-    def __init__(self,table,name,type_name,values,virtual=True):
+    def __init__(self,table,name,type_name,virtual=True):
         self.table = table
         self.name = name
         self._type_name = type_name
-        self._set_values(values)
         self._virtual = virtual
         self._usable = True
         self.seq_order = 0
@@ -186,17 +184,17 @@ class Feature():
     """  
     def _get_defined_values(self,row_ids=None):
         if self.get_type() == INT_TYPE or self.get_type() == FLOAT_TYPE:
-            return map(lambda x : float(x),filter (lambda a: a != NONE_VALUE, self._get_values(row_ids)))
+            return map(lambda x : float(x),filter (lambda a: a != NONE_VALUE, self.table.get_values(self.name,row_ids)))
         elif self.get_type() == TEXT_TYPE:
-            return map(lambda x : str(x),filter (lambda a: a != NONE_VALUE, self._get_values(row_ids)))
+            return map(lambda x : str(x),filter (lambda a: a != NONE_VALUE, self.table.get_values(self.name,row_ids)))
         else:
-            return filter (lambda a: a != NONE_VALUE, self._get_values(row_ids))
+            return filter (lambda a: a != NONE_VALUE, self.table.get_values(self.name,row_ids))
     """
         Get the undefined values
         Long running task
     """  
     def _get_undefined_values(self,row_ids=None):
-        return filter (lambda a: a == NONE_VALUE, self._get_values(row_ids))
+        return filter (lambda a: a == NONE_VALUE, self.table.get_values(self.name,row_ids))
    
     """
         Auto discover the feature properties while creating the analysis object
@@ -252,7 +250,7 @@ class Feature():
     """  
     def _refresh(self):
         
-        self.num_values = len(self._get_values())
+        self.num_values = len(self.table.get_values(self.name))
         self.num_undefined_value = len(self._get_undefined_values())
         
         #compute the density distribution (count or tfidf)
@@ -269,38 +267,17 @@ class Feature():
         
         #compute feature statistics
         self._compute_stats()
-    
-    """
-        Get the feature values - must be externalized to support large values
-    """
-            
-    def _get_values(self,row_ids=None):
-        
-        if row_ids is not None:
-            rows = map(lambda row_id : self._get_value(row_id),row_ids)
-            return rows
-        else:
-            return self._values
-    
-    
-    """
-        Get a feature-row value - must be externalized to support large values
-    """
-    def _get_value(self,row_index):
-        if self.get_type() == TEXT_TYPE:
-            return str(self._values[row_index])
-        else:
-            return self._values[row_index]
-    
+   
     """
         Set the feature values - must be externalized to support large values
     """
+    """
     def _set_values(self,values):
         self._values = values
-    
+    """
     # reshape the target value fot the dataset
     def _reshape_target(self,row_index):
-        value = self._get_value(row_index)
+        value = self.table.get_value(self.name,row_index)
         
         #if undefined value, then compute the default value function
         if value == NONE_VALUE:        
@@ -315,7 +292,7 @@ class Feature():
     # reshape the non target value fot the dataset
     def _reshape_value(self,row_index):
         reshaped_values = []
-        value = self._get_value(row_index)
+        value = self.table.get_value(self.name,row_index)
         
         if value == NONE_VALUE:        
             value = _exec_func_code(self.default_function_code,self.table,self,row_index)
@@ -356,7 +333,7 @@ class Feature():
     def update_feature(self):
         if self.is_virtual():
             values = self.table._load_virtual_values(self.virtual_function_code)
-            self._set_values(values)
+            self.table.set_values(self.name,values)
             self._discover()
     """
         **PUBLIC**
@@ -396,15 +373,15 @@ class Feature():
     def _is_value_equal(self,row_index, value_to_compare):
 
         if self.get_type() == TEXT_TYPE: #case insensitive comparaison
-            return value_to_compare.lower() in self._get_value(row_index).lower()
+            return value_to_compare.lower() in self.table.get_value(self.name,row_index).lower()
         elif self.get_type() == FLOAT_TYPE:
-            return round(float(self._get_value(row_index))) == round(float(value_to_compare))
+            return round(float(self.table.get_value(self.name,row_index))) == round(float(value_to_compare))
         else:
-            return self._get_value(row_index) == value_to_compare
+            return self.table.get_value(self.name,row_index) == value_to_compare
     """
         **PUBLIC**
     """    
     def get_correlation_with(self,feature,filter_function = None):
         row_ids = self.table._get_row_ids(filter_function)
-        return map(lambda i : [self._get_value(i),feature._get_value(i)],row_ids)
+        return map(lambda i : [self.table.get_value(self.name,i),self.table.get_value(feature.name,i)],row_ids)
         

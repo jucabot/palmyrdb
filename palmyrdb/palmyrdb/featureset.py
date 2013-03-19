@@ -190,16 +190,18 @@ class FeatureTable():
         
         if name in self._features: #Feature already exist
             feature = self.get_feature(name)
-            feature._set_values(values)
+            self.set_values(name,values)
             feature.virtual_function_code = virtual_function_code
             feature._refresh()
 
         else:
-            feature = Feature.create_feature(self,name,type_name,values,virtual)
+            feature = Feature.create_feature(self,name,type_name,virtual)
+            self.set_feature(name, feature)
+            self.set_values(name, values)
             feature.seq_order = self._get_next_seq_order()
             feature.virtual_function_code = virtual_function_code
             feature._discover()
-            self._features[name] = feature
+            
         return feature
     
     
@@ -251,15 +253,34 @@ class FeatureTable():
         return self
     
     """
-        **PUBLIC**
+        **PUBLIC** - custom function
     """
     def get_value(self,name,row_index):
-        return self.get_feature(name)._get_value(row_index)
+        #return self.get_feature(name)._get_value(row_index)
+        feature = self.get_feature(name)
+        if feature.get_type() == TEXT_TYPE:
+            return str(feature._values[row_index])
+        else:
+            return feature._values[row_index]
+    
+    
+    
+    def get_values(self,name,row_ids=None):
+        
+        if row_ids is not None:
+            rows = map(lambda row_id : self.get_value(name,row_id),row_ids)
+            return rows
+        else:
+            return self.get_feature(name)._values
+    
+    def set_values(self,name,values):
+        self.get_feature(name)._values = values
+    
     """
-        **PUBLIC**
+        **PUBLIC** - custom function
     """
     def has_value(self,name,row_index):
-        return self.get_feature(name)._get_value(row_index) != NONE_VALUE
+        return self.get_value(name,row_index) != NONE_VALUE
     
     
     """
