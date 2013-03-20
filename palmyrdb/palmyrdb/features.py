@@ -1,15 +1,30 @@
-from sklearn.preprocessing import scale
+from palmyrdb.converter import FLOAT_TYPE, INT_TYPE, TEXT_TYPE,NONE_VALUE
+from palmyrdb.script import _exec_func_code, compile_func_code
 from numpy.ma.core import mean, std
 from numpy.lib.function_base import median, percentile
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from sklearn.cross_validation import train_test_split
-from sklearn import grid_search
-from sklearn.svm import SVC,SVR
-from sklearn.feature_selection import SelectKBest
-from sklearn.metrics import confusion_matrix
-from palmyrdb.converter import FLOAT_TYPE, INT_TYPE, TEXT_TYPE,NONE_VALUE
 
-from palmyrdb.script import _exec_func_code
+
+def format_int(value):
+    if value == NONE_VALUE:
+        return NONE_VALUE
+    else:
+        return int(value)
+    
+def format_float(value):
+    if value == NONE_VALUE:
+        return NONE_VALUE
+    else:
+        return float(value)
+
+def compare_text(value, value_to_compare):
+    return value_to_compare.lower() in value.lower()
+
+def compare_float(value, value_to_compare):
+    return round(float(value)) == round(float(value_to_compare))
+
+def compare(value, value_to_compare):
+    return value == value_to_compare 
 
 def _freqdist(values):
         freq = {}
@@ -21,11 +36,38 @@ def _freqdist(values):
                 freq[value] +=1
             except KeyError:
                 freq[value] = 1
+        #remove undefined values
+        if NONE_VALUE in freq:
+            values_len -= freq[NONE_VALUE]
+            del freq[NONE_VALUE]
+        
         for value, count in freq.items():
             freq[value] = round(freq[value]/values_len * 100,2)
         
         return freq
+
+def _compute_stats_function(values):
+    stats = None
+    if len(values)>1:
+        stats = {}
+        stats['min'] = min(values)
+        stats['max'] = max(values)
+        stats['mean'] = mean(values)
+        stats['median'] = median(values)
+        stats['1st-quartile'] = percentile(values,25)
+        stats['3rd-quartile'] = percentile(values,75)
+        stats['std-error'] = std(values)
+        
+    return stats
+
+"""
+    pseudo aggregation of plot pairs - should limit the mumber of point in scatter plot while aggregating clusters of points
+"""
+def scatter_cluster_function(xy_values):
+    x_values = xy_values[0]
+    y_values = xy_values[1]
     
+    return map(lambda i : [x_values[i],y_values[i]],range(len(xy_values[0])))
 def _check_is_sentence(documents):
     
     for doc in documents:
@@ -44,10 +86,10 @@ def _word_tfidf_dist(documents):
     if len(documents) > 0: 
         if _check_is_sentence(documents): #if document contains only 1 or 2 or 3 chars --> acronyms
             try:
-                v = TfidfVectorizer(ngram_range=(1,2),max_features=50)
-                matrix = v.fit_transform(documents).todense()
+                text_analyzer = TfidfVectorizer(ngram_range=(1,2),max_features=50)
+                matrix = text_analyzer.fit_transform(documents).todense()
                 
-                for vocabulary in v.vocabulary_.items():
+                for vocabulary in text_analyzer.vocabulary_.items():
                     word = vocabulary[0]
                     indice = vocabulary[1]
                     words_tfidf[word] = score_tfidf_freq(matrix[:,indice]) 
@@ -55,15 +97,10 @@ def _word_tfidf_dist(documents):
                 return {}
         else:
             return _freqdist(documents)
-        
-    
     return words_tfidf
 
-v = TfidfVectorizer(ngram_range=(1,2))
-def _decode_document(document):
-    
-    return v.build_analyzer()(document)
-    
+
+
 
 class Feature():
     table = None
@@ -82,11 +119,15 @@ class Feature():
     median_value =None        
     freq_dist = None              #heavy if no class
     num_unique_values = None
-    
+    format_function = None
+    compare_function = None
     default_function_code = None
     virtual_function_code = None
     first_quarter_percentile = None
     third_quarter_percentile = None
+    
+    text_analyzer = None
+    
     
     """
         Create a feature
@@ -118,6 +159,19 @@ class Feature():
         self.default_function_code = "function = lambda table,feature,row_index : feature['common-value']"
         self.virtual_function_code = None
         
+        if type_name == TEXT_TYPE:
+            self.text_analyzer = None
+            self.format_function = unicode
+            self.compare_function = compare_text
+        elif type_name == INT_TYPE:
+            self.format_function = format_int
+            self.compare_function = compare
+        elif type_name == FLOAT_TYPE:
+            self.format_function = format_float
+            self.compare_function = compare_float
+        else:
+            self.format_function = str
+            self.compare_function = compare
      
     """
         Is discarded feature?
@@ -174,28 +228,17 @@ class Feature():
             headers.append(header)
         
         return headers
+    """
+        **PUBLIC**
+    """
+    def get_frequency_distribution(self,filter_function=None):
 
-    """
-    *************************************************************************************
-    """
-    """
-        Get the defined values and force typing
-        Long running task
-    """  
-    def _get_defined_values(self,row_ids=None):
-        if self.get_type() == INT_TYPE or self.get_type() == FLOAT_TYPE:
-            return map(lambda x : float(x),filter (lambda a: a != NONE_VALUE, self.table.get_values(self.name,row_ids)))
-        elif self.get_type() == TEXT_TYPE:
-            return map(lambda x : str(x),filter (lambda a: a != NONE_VALUE, self.table.get_values(self.name,row_ids)))
+        if self.get_type() == TEXT_TYPE:
+                df_function = _word_tfidf_dist
         else:
-            return filter (lambda a: a != NONE_VALUE, self.table.get_values(self.name,row_ids))
-    """
-        Get the undefined values
-        Long running task
-    """  
-    def _get_undefined_values(self,row_ids=None):
-        return filter (lambda a: a == NONE_VALUE, self.table.get_values(self.name,row_ids))
-   
+                df_function = _freqdist
+        return self.table.get_datastore().aggregate(self.name,df_function,filter_function)
+            
     """
         Auto discover the feature properties while creating the analysis object
         Long running task
@@ -210,51 +253,24 @@ class Feature():
         self.classes = self.freq_dist.keys() #classes are fixed by discover
         self.default_function_code = "function = lambda table,feature,row_index : feature.common_value"    
     
-    def _filter(self,filter_function=None):
-        if filter_function is None:
-            values = self._get_defined_values()
-        else:
-            ids = self.table._get_row_ids(filter_function)
-            values = self._get_defined_values(row_ids=ids)
-        
-        return values
-    """
-        **PUBLIC**
-    """
-    def get_frequency_distribution(self,filter_function=None):
-        
-        values = self._filter(filter_function)
-
-        if self.get_type() == TEXT_TYPE:
-            return _word_tfidf_dist(values)
-        else:
-            return _freqdist(values)
-        
-        
-    
-    def _compute_stats(self):
-        if self.get_type() == INT_TYPE or self.get_type() == FLOAT_TYPE:
-            distinct_values = self.freq_dist.keys()
-            self.min_value = min(distinct_values)
-            self.max_value = max(distinct_values)
-            values = self._get_defined_values()
-            self.mean_value = mean(values)
-            self.median_value = median(values)
-            self.first_quarter_percentile = percentile(values,25)
-            self.third_quarter_percentile = percentile(values,75)
-            self.std_dev = std(values)
-    
+            
     """
         Refresh the feature properties
         Long running task (value metrics)
     """  
     def _refresh(self):
         
-        self.num_values = len(self.table.get_values(self.name))
-        self.num_undefined_value = len(self._get_undefined_values())
+        #count num of values
+        self.num_values = self.table.get_datastore().aggregate(self.name,len)
+        
+        #count num of undefined values
+        self.num_undefined_value = self.table.get_datastore().aggregate(self.name,len,lambda dataset,i : not dataset.has_value(self.name,i))
         
         #compute the density distribution (count or tfidf)
         self.freq_dist = self.get_frequency_distribution()
+        if self.get_type() == TEXT_TYPE:
+            wbag_function = lambda docs : TfidfVectorizer(ngram_range=(1,2),max_features=50).fit(docs) if _check_is_sentence(docs) else None
+            self.text_analyzer = self.table.get_datastore().aggregate(self.name,wbag_function)
         
         #is completely dense
         self.is_sparse = self.num_undefined_value > 0
@@ -266,19 +282,77 @@ class Feature():
         self.common_value, common_rank = sorted_fd[0]
         
         #compute feature statistics
-        self._compute_stats()
+        if self.get_type() == INT_TYPE or self.get_type() == FLOAT_TYPE:
+            #compute stats
+            defined_value_filter = lambda dataset,i : dataset.has_value(self.name,i)
+            stats = self._compute_stats(defined_value_filter)
+            self.mean_value = stats['mean']
+            self.median_value = stats['mean']
+            self.first_quarter_percentile = stats['1st-quartile']
+            self.third_quarter_percentile = stats['3rd-quartile']
+            self.std_dev = stats['std-error']
+            self.min_value = stats['min']
+            self.max_value = stats['max']
+   
+    def _compute_stats(self,filter_function):
+        return self.table.get_datastore().aggregate(self.name,_compute_stats_function,filter_function)
    
     """
-        Set the feature values - must be externalized to support large values
+        **PUBLIC**
     """
-    """
-    def _set_values(self,values):
-        self._values = values
-    """
-    # reshape the target value fot the dataset
-    def _reshape_target(self,row_index):
-        value = self.table.get_value(self.name,row_index)
+    def get_distribution_by(self, feature,centile=False):
+        freq_dist = []
         
+        for category in feature.classes:
+                filter_function = lambda dataset,row_index : feature.compare_function(dataset.get_value(feature.name,row_index),category) 
+                group_freq = self.get_frequency_distribution(filter_function)
+                
+                serie = {
+                         'name' : feature.name + "=" + unicode(int(category) if feature.get_type()==INT_TYPE else category),
+                         'data' : map(lambda category : round(group_freq[category]*100 if centile else group_freq[category] ,4) if category in group_freq else 0 ,self.classes)
+                         }
+                freq_dist.append(serie)
+        return freq_dist
+    """
+        **PUBLIC**
+    """
+    def get_distribution_stats_by(self,feature,centile=False):
+        result = []
+        for category in feature.classes:
+            filter_function = lambda dataset,row_index : dataset.has_value(self.name,row_index) and self.compare_function(dataset.get_value(feature.name,row_index),category)
+            
+            stats = self._compute_stats(filter_function)
+            
+            if stats is not None:
+                stat_min = stats['min']
+                stat_max = stats['max']
+                stat_median = stats['median']
+                stat_first_quartile = stats['1st-quartile']
+                stat_third_quartile = stats['3rd-quartile']
+                
+                result.append([stat_min,stat_first_quartile,stat_median, stat_third_quartile,stat_max])
+        return result
+
+    """
+        Update virtual feature and compute the feature values (long task)
+        **PUBLIC**
+    """
+    def update_feature(self):
+        if self.is_virtual():
+            self.table.get_datastore().transform(self.name, compile_func_code(self.virtual_function_code))
+            self._discover()
+
+    
+    """
+        **PUBLIC**
+    """    
+    def get_correlation_with(self,feature,filter_function = None):
+        exclude_none_value_function = lambda table,i : table.has_value(self.name,i) and table.has_value(feature.name,i)
+        feature_ids = [self.name,feature.name]
+        return self.table.get_datastore().aggregate_list(feature_ids,scatter_cluster_function,exclude_none_value_function)
+    
+    # reshape the target value fot the dataset
+    def reshape_target(self,value,row_index):
         #if undefined value, then compute the default value function
         if value == NONE_VALUE:        
             value = _exec_func_code(self.default_function_code,self.table,self,row_index)
@@ -290,14 +364,12 @@ class Feature():
         return value
     
     # reshape the non target value fot the dataset
-    def _reshape_value(self,row_index):
+    def reshape_value(self,value,row_index):
         reshaped_values = []
-        value = self.table.get_value(self.name,row_index)
         
         if value == NONE_VALUE:        
             value = _exec_func_code(self.default_function_code,self.table,self,row_index)
         
-                   
         if self.has_class():
             if len(self.classes)>2: 
                 for feature in self.classes:
@@ -316,7 +388,7 @@ class Feature():
         else: # no class
             if self.get_type() == TEXT_TYPE: #text
                 for feature in self.classes:
-                    if feature in _decode_document(unicode(value)) :
+                    if feature in self.text_analyzer.build_analyzer()(unicode(value)) :
                         reshaped_values.append(1.0)
                     else:
                         reshaped_values.append(0.0)
@@ -325,63 +397,7 @@ class Feature():
         
         return reshaped_values
     
+    """
+    *************************************************************************************
+    """
     
-    """
-        Update virtual feature and compute the feature values (long task)
-        **PUBLIC**
-    """
-    def update_feature(self):
-        if self.is_virtual():
-            values = self.table._load_virtual_values(self.virtual_function_code)
-            self.table.set_values(self.name,values)
-            self._discover()
-    """
-        **PUBLIC**
-    """
-    def get_distribution_by(self, feature,centile=False):
-        freq_dist = []
-        
-        for category in feature.classes:
-                filter_function = lambda table,row_index : table.get_feature(feature.name)._is_value_equal(row_index,category) 
-                group_freq = self.get_frequency_distribution(filter_function)
-                
-                serie = {
-                         'name' : feature.name + "=" + unicode(int(category) if feature.get_type()==INT_TYPE else category),
-                         'data' : map(lambda category : round(group_freq[category]*100 if centile else group_freq[category] ,4) if category in group_freq else 0 ,self.classes)
-                         }
-                freq_dist.append(serie)
-        return freq_dist
-    """
-        **PUBLIC**
-    """
-    def get_distribution_stats_by(self,feature,centile=False):
-        result = []
-        for category in feature.classes:
-            filter_function = lambda table,row_index : table.get_feature(feature.name)._is_value_equal(row_index,category) 
-            group_values = self._filter(filter_function)
-            
-            if (len(group_values) >1):
-                stat_min = min(group_values)
-                stat_max = max(group_values)
-                stat_median = median(group_values)
-                stat_first_quartile = percentile(group_values,25)
-                stat_third_quartile = percentile(group_values,75)
-                
-                result.append([stat_min,stat_first_quartile,stat_median, stat_third_quartile,stat_max])
-        return result
-    
-    def _is_value_equal(self,row_index, value_to_compare):
-
-        if self.get_type() == TEXT_TYPE: #case insensitive comparaison
-            return value_to_compare.lower() in self.table.get_value(self.name,row_index).lower()
-        elif self.get_type() == FLOAT_TYPE:
-            return round(float(self.table.get_value(self.name,row_index))) == round(float(value_to_compare))
-        else:
-            return self.table.get_value(self.name,row_index) == value_to_compare
-    """
-        **PUBLIC**
-    """    
-    def get_correlation_with(self,feature,filter_function = None):
-        row_ids = self.table._get_row_ids(filter_function)
-        return map(lambda i : [self.table.get_value(self.name,i),self.table.get_value(feature.name,i)],row_ids)
-        

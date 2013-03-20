@@ -31,15 +31,14 @@ class TypeConverter():
         values = filter(lambda v : v != NONE_VALUE,values )
         first_type = type(values[0]).__name__
         
+        scaned_type = first_type
+        
         if first_type == FLOAT_TYPE or first_type == INT_TYPE:
             types = map(lambda v : type(v).__name__,values)
             if TEXT_TYPE in types:
-                return TEXT_TYPE
-            else:
-                return first_type
-        else:
-            return first_type
-    
+                scaned_type =  TEXT_TYPE
+        
+        return scaned_type
     """
         Try to type the value
     """
