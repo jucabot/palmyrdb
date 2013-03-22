@@ -8,6 +8,7 @@ from sklearn.cross_validation import train_test_split
 from sklearn.svm import SVC,SVR
 from sklearn.metrics import confusion_matrix
 from palmyrdb.model import ModelInfo, CLASSIFICATION_MODEL, REGRESSION_MODEL
+from palmyrdb.script import compile_func_code
 
 
 
@@ -175,9 +176,9 @@ class FeatureDataSet():
         
         return ds_X,ds_y
     
-    def select_best_features(self,k=10):
+    def select_best_features(self,k=10, filter_function=None):
         if self._feature_set.get_target() is not None: #supervised model
-            dataset_X,dataset_y = self._get_dataset(scale_X=False)
+            dataset_X,dataset_y = self._get_dataset(filter_function,scale_X=False)
             (nrows,nfeatures) = dataset_X.shape
             kbest = SelectKBest(k=min(k,nfeatures)).fit(dataset_X,dataset_y)
             kbest_score = kbest.scores_
@@ -197,13 +198,17 @@ class FeatureDataSet():
     """
         Train a prediction model for target
     """
-    def build_model(self,C=1.0,kernel='rbf'):
+    def build_model(self,C=1.0,kernel='rbf', filter_code=None):
         
         target = self._feature_set.target
         if target is not None: #supervised model
             target_feature = self._feature_set.get_feature(target)
             
-            target_filter = lambda table,row_index : table.has_value(target,row_index)
+            if filter_code is None:
+                target_filter = lambda table,row_index : table.has_value(target,row_index)
+            else:
+                filter_function = compile_func_code(filter_code)
+                target_filter = lambda table,row_index : filter_function(table,row_index) and table.has_value(target,row_index)
             dataset_X,dataset_y = self._get_dataset(filter_function=target_filter)
     
             train_X,test_X, train_y,test_y = train_test_split(dataset_X,dataset_y)
@@ -212,6 +217,7 @@ class FeatureDataSet():
             labels = self._feature_set.get_selected_feature_names()
             model_info.selected_features = labels
             model_info.target = target
+            model_info.filter_code = filter_code
             
             if target_feature.has_class(): #classification model
                 model = SVC(C=C,kernel=kernel).fit(train_X,train_y)

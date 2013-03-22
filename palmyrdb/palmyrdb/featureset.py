@@ -218,16 +218,17 @@ class FeatureTable():
     """
         **PUBLIC**
     """    
-    def select_best_features(self,k=10):
-        return self.get_datastore().select_best_features(k=k)
+    def select_best_features(self,k=10,filter_code=None):
+        filter_function = compile_func_code(filter_code) if filter_code is not None else None
+        return self.get_datastore().select_best_features(k=k,filter_function=filter_function)
     
     """
         Train a prediction model for target
         (long running)
     """
     
-    def build_model(self,C=1.0,kernel='rbf'):
-        return self.get_datastore().build_model(C=C, kernel=kernel)
+    def build_model(self,filter_code=None,C=1.0,kernel='rbf'):
+        return self.get_datastore().build_model(C=C, kernel=kernel,filter_code=filter_code)
 
         
     """

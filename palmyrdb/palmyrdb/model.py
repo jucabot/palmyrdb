@@ -11,6 +11,7 @@ class ModelInfo():
     metrics = None
     target = None
     target_class = None
+    filter_name = None
     
     def __init__(self,name):
         self.name = name
@@ -20,6 +21,7 @@ class ModelInfo():
         self.metrics = None
         self.target = None
         self.target_class = None
+        self.filter_code = None
 
     def get_properties(self):
         props = {
@@ -29,6 +31,7 @@ class ModelInfo():
                  'score' : self.score,
                  'metrics' : self.metrics,
                  'target' : self.target,
-                 'target_class' : self.target_class
+                 'target_class' : self.target_class,
+                 'filter' : self.filter_code
                  }
         return props
