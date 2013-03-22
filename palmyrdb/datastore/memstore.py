@@ -24,13 +24,14 @@ class FeatureDataSet():
     
     def get_row_count(self):
         return self._row_count
-   
+    
     def get_value(self,feature_id,row_index):
         return self._dataset[feature_id][row_index]
     
     def has_value(self,feature_id,row_index):
         return self.get_value(feature_id,row_index) != NONE_VALUE
     
+    """
     #A degager a terme
     def get_values(self,name,row_ids=None):
         if row_ids is not None:
@@ -38,7 +39,7 @@ class FeatureDataSet():
             return rows
         else:
             return self._dataset[name]
-   
+    """
     def _filter(self,feature_id,filter_function=None):
         if filter_function is None:
             values = filter (lambda v: v != NONE_VALUE, self._dataset[feature_id] )
@@ -117,6 +118,7 @@ class FeatureDataSet():
         rows = []
 
         count = 0
+        count_collected = 0
         for i in range(self.get_row_count()):
             row = []
            
@@ -125,17 +127,20 @@ class FeatureDataSet():
                 if filter_function(self,i) == False:
                     continue
             
-            if i <= from_page * page: # go to page
+            count += 1
+            
+            
+            if count <= from_page * page: # go to page
                 continue
              
-            if count >= page: #limit
-                break
+            if count_collected >= page: #limit
+                continue
             
-            count += 1
             
             for feature_id in feature_ids:
                 row.append(self.get_value(feature_id,i))
             rows.append(row)
+            count_collected += 1
         return rows, count
     
     

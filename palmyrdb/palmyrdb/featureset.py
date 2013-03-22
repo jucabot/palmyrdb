@@ -17,6 +17,8 @@ class FeatureTable():
     params = None
     models = None
     current_model = None
+    filters = None
+    current_filter = None
    
         
     def __init__(self,context=None):
@@ -28,6 +30,8 @@ class FeatureTable():
         self.params = {}
         self.models = {}
         self.current_model = None
+        self.filters = {}
+        self.current_filter = None
         self._datastore = memstore.FeatureDataSet(self) #should be loaded by configuration
 
     def _get_next_seq_order(self):
@@ -190,7 +194,7 @@ class FeatureTable():
     """
         **PUBLIC**
     """    
-    def get_datatable(self,filter_function_code=None,page=100,from_page=0):
+    def get_datatable(self,filter_function=None,page=100,from_page=0):
         result = {}
 
         result['type'] = 'table'
@@ -198,17 +202,17 @@ class FeatureTable():
         result['rows'] = []
         result['features'] = self.get_feature_names()
         
-        result['rows'], count = self.get_datastore().take(self.get_feature_names(),page=page,from_page=from_page)
+        result['rows'], count = self.get_datastore().take(self.get_feature_names(),page=page,from_page=from_page,filter_function=filter_function)
         
         result['num_total_rows'] = self.get_row_count()
         result['num_rows'] = count
-        num_pages = int(math.ceil(float(self.get_row_count()) / page))
+        num_pages = int(math.floor(float(count) / page) + 1 if count % page > 0 else 0 ) #int(math.ceil(float(self.get_row_count()) / page))
         result['list_pages'] = range(num_pages)
         page_num = from_page
         result['page_num'] = page_num
         result['page_total'] = num_pages
         result['has_prev'] = True if page_num >0 else False
-        result['has_next'] = True if page_num < num_pages else False
+        result['has_next'] = True if page_num < num_pages-1 else False
         return result
     
     """
@@ -239,8 +243,11 @@ class FeatureTable():
         
         ftable.get_datastore().apply_prediction(model, model_info, input_filename, output_filename)
         
+    def add_filter(self,name,code):
         
-    
+        filter_info = {'name' : name, 'code': code}  
+        self.filters[name] = code
+        self.current_filter = filter_info
     """
     **************************************************************************************
     

@@ -300,12 +300,12 @@ class Feature():
     """
         **PUBLIC**
     """
-    def get_distribution_by(self, feature,centile=False):
+    def get_distribution_by(self, feature,centile=True,filter_function=None):
         freq_dist = []
         
         for category in feature.classes:
-                filter_function = lambda dataset,row_index : feature.compare_function(dataset.get_value(feature.name,row_index),category) 
-                group_freq = self.get_frequency_distribution(filter_function)
+                group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and  feature.compare_function(dataset.get_value(feature.name,row_index),category) 
+                group_freq = self.get_frequency_distribution(group_filter_function)
                 
                 serie = {
                          'name' : feature.name + "=" + unicode(int(category) if feature.get_type()==INT_TYPE else category),
@@ -316,12 +316,12 @@ class Feature():
     """
         **PUBLIC**
     """
-    def get_distribution_stats_by(self,feature,centile=False):
+    def get_distribution_stats_by(self,feature,centile=False,filter_function=None):
         result = []
         for category in feature.classes:
-            filter_function = lambda dataset,row_index : dataset.has_value(self.name,row_index) and self.compare_function(dataset.get_value(feature.name,row_index),category)
+            group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and dataset.has_value(self.name,row_index) and self.compare_function(dataset.get_value(feature.name,row_index),category)
             
-            stats = self._compute_stats(filter_function)
+            stats = self._compute_stats(group_filter_function)
             
             if stats is not None:
                 stat_min = stats['min']
@@ -347,7 +347,7 @@ class Feature():
         **PUBLIC**
     """    
     def get_correlation_with(self,feature,filter_function = None):
-        exclude_none_value_function = lambda table,i : table.has_value(self.name,i) and table.has_value(feature.name,i)
+        exclude_none_value_function = lambda table,i : (filter_function(table,i) if filter_function is not None else True) and table.has_value(self.name,i) and table.has_value(feature.name,i) and (filter_function(table,i) if filter_function is not None else True)
         feature_ids = [self.name,feature.name]
         return self.table.get_datastore().aggregate_list(feature_ids,scatter_cluster_function,exclude_none_value_function)
     
