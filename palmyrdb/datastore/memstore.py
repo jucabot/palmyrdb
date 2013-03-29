@@ -198,7 +198,7 @@ class FeatureDataSet():
     """
         Train a prediction model for target
     """
-    def build_model(self,C=1.0,kernel='rbf', filter_code=None):
+    def build_model(self,C=1.0,kernel='rbf',filter_name=None, filter_code=None):
         
         target = self._feature_set.target
         if target is not None: #supervised model
@@ -213,11 +213,12 @@ class FeatureDataSet():
     
             train_X,test_X, train_y,test_y = train_test_split(dataset_X,dataset_y)
     
-            model_info = ModelInfo('%s' % target)
+            model_info = ModelInfo('%s' % target if filter_name is None else '%s (%s)' % (target,filter_name))
             labels = self._feature_set.get_selected_feature_names()
             model_info.selected_features = labels
             model_info.target = target
             model_info.filter_code = filter_code
+            model_info.filter_name = filter_name
             
             if target_feature.has_class(): #classification model
                 model = SVC(C=C,kernel=kernel).fit(train_X,train_y)
@@ -244,18 +245,9 @@ class FeatureDataSet():
         else: #clustering model
             return None,None
     
-    def _write_prediction(self,pred_y,input_filename, output_filename):
-        open_file_object = csv.writer(open(output_filename, "wb"))
-        pred_file_object = csv.reader(open(input_filename, 'rb')) #Load in the csv file
-            
-        pred_file_object.next()
-        i = 0
-        for row in pred_file_object:
-            row.insert(0,pred_y[i])
-            open_file_object.writerow(row)
-            i += 1
     
-    def apply_prediction(self,model, model_info, input_filename, output_filename):
+    
+    def apply_prediction(self,model, model_info):
 
         dataset_X,dataset_y = self._get_dataset()
         target_feature = self._feature_set.get_feature(model_info.target)
@@ -273,6 +265,6 @@ class FeatureDataSet():
             elif target_feature.get_type() == FLOAT_TYPE:
                 pred_y = pred_y.astype(np.float64)
                 
-        self._write_prediction(pred_y, input_filename, output_filename)
+        return pred_y
         
     
