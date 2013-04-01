@@ -1,8 +1,8 @@
 import re
 
 
-_INT_PATTERN = re.compile(r'[0-9]*')
-_FLOAT_PATTERN = re.compile(r'[0-9]*[,|.][0-9]*')
+_INT_PATTERN = re.compile(r'[-0-9]*')
+_FLOAT_PATTERN = re.compile(r'[-0-9]*[,|.][0-9]*')
 _DATE_US = re.compile(r'(0[1-9]|1[012])[- \/.](0[1-9]|[12][0-9]|3[01])[- \/.](19|20)[0-9]{2}')
 _DATE_EUR = re.compile(r'(0[1-9]|[12][0-9]|3[01])[- \/.](0[1-9]|1[012])[- \/.](19|20)[0-9]{2}')
 

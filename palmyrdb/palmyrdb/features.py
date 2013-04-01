@@ -209,6 +209,12 @@ class Feature():
     def has_class(self):
         return self._is_class
 
+    """
+        Set as target allowed?
+    """
+    def target_allowed(self):
+        allowed = not (self.get_type() == TEXT_TYPE and not self.has_class())
+        return allowed
     
     # reshape the header for display
     def _reshape_header(self):
