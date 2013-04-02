@@ -3,6 +3,7 @@ from palmyrdb.script import _exec_func_code, compile_func_code
 from numpy.ma.core import mean, std
 from numpy.lib.function_base import median, percentile
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+import uuid
 
 
 def format_int(value):
@@ -103,6 +104,7 @@ def _word_tfidf_dist(documents):
 
 
 class Feature():
+    id = None
     table = None
     name = None
     _type_name = None
@@ -134,9 +136,12 @@ class Feature():
     """
     @staticmethod
     def create_feature(table,name,type_name,virtual=True):
-        return Feature(table,name,type_name,virtual)
+        f = Feature(table,name,type_name,virtual)
+        f.id = str(uuid.uuid4())
+        return f
     
     def __init__(self,table,name,type_name,virtual=True):
+        self.id=None
         self.table = table
         self.name = name
         self._type_name = type_name
@@ -172,6 +177,34 @@ class Feature():
         else:
             self.format_function = str
             self.compare_function = compare
+    
+    def get_properties(self):
+        
+        props = {
+            'id' : self.id,
+            'name':self.name,
+            'type': self._type_name,
+            'virtual' : self._virtual,
+            'usable': self._usable,
+            'seq' : self.seq_order,
+            'has_class' : self._is_class,
+            'sparse' : self.is_sparse,
+            'classes' : self.classes,
+            'common_value' : self.common_value,
+            'min_value': self.min_value,
+            'max_value' : self.max_value,
+            'mean_value' : self.mean_value,
+            'median_value' : self.median_value,
+            'std_value' : self.std_dev,
+            'first_quarter_value' : self.first_quarter_percentile,
+            'third_quarter_value' : self.third_quarter_percentile,
+            'freq_dist' : self.freq_dist,
+            'num_unique_values' : self.num_unique_values,
+            'default_function_code' : self.default_function_code,
+            'virtual_function_code' : self.virtual_function_code
+            
+            }
+        return props
      
     """
         Is discarded feature?

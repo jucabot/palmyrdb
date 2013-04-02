@@ -4,6 +4,8 @@ from palmyrdb.script import compile_func_code
 from palmyrdb.features import Feature
 from datastore import memstore
 import csv
+from json import dumps
+import uuid
 
 
 """
@@ -20,13 +22,20 @@ class FeatureTable():
     current_model = None
     filters = None
     current_filter = None
+    id = None
    
-        
+    @staticmethod
+    def create(context=None):
+        fs = FeatureTable(context)
+        fs.id = str(uuid.uuid4())
+        return fs
+    
+    
     def __init__(self,context=None):
+        self.id= None
         self.context = context
         self._features = {}
         self._seq_order = 0
-        #self._row_count = 0
         self.target = None
         self.params = {}
         self.models = {}
@@ -188,6 +197,7 @@ class FeatureTable():
         (long running)
     """
     def load_from_csv(self,filename):
+        
         columns = self.get_datastore().load_from_csv(filename)
         for fname,ftype in columns:
             self._load_feature(fname,ftype)        
@@ -283,3 +293,17 @@ class FeatureTable():
             row.insert(0,pred_y[i])
             open_file_object.writerow(row)
             i += 1
+            
+    def get_properties(self):
+        
+        fset = {
+                'id' : self.id,
+                'target' : self.target,
+                'params' : self.params,
+                'filters' : self.filters,
+                'models' : map(lambda v : v[1].get_properties(),self.models.values()),
+                'features' : map(lambda v : v[1].get_properties(),self.get_features())
+                
+                }
+        return fset
+        
