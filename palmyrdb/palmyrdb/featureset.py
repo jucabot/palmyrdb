@@ -6,6 +6,7 @@ from datastore import memstore
 import csv
 from json import dumps
 import uuid
+from palmyrdb.converter import DATE_TYPE, INT_TYPE, FLOAT_TYPE
 
 
 """
@@ -57,10 +58,30 @@ class FeatureTable():
         return virtual_features
     
     """
-        Retrive the features of the set sorted by order
+        Retrieve the features of the set sorted by order
     """
     def get_features(self):
         return sorted(self._features.iteritems(), key=lambda (k,v): v.seq_order)
+    
+    """
+        Retrieve the features by type of the set sorted by order
+    """
+    def get_features_by_types(self,type_names):
+        features = filter(lambda (k,v) : v.get_type() in type_names,self._features.iteritems())
+        return sorted(features, key=lambda (k,v): v.seq_order)
+    
+    """
+        Retrieve the date features of the set sorted by order
+    """
+    def get_date_features(self):
+        return self.get_features_by_types([DATE_TYPE]) 
+    
+    """
+        Retrieve the numerical features of the set sorted by order
+    """
+    def get_numerical_features(self):
+        return self.get_features_by_types([INT_TYPE, FLOAT_TYPE]) 
+    
     """
         Return the list of feature names sorted by order
     """

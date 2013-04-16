@@ -1,9 +1,11 @@
-from palmyrdb.converter import FLOAT_TYPE, INT_TYPE, TEXT_TYPE,NONE_VALUE
+from palmyrdb.converter import FLOAT_TYPE, INT_TYPE, TEXT_TYPE,NONE_VALUE,\
+    DATE_TYPE
 from palmyrdb.script import _exec_func_code, compile_func_code
 from numpy.ma.core import mean, std
 from numpy.lib.function_base import median, percentile
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 import uuid
+import datetime
 
 
 def format_int(value):
@@ -17,6 +19,15 @@ def format_float(value):
         return NONE_VALUE
     else:
         return float(value)
+
+def format_date(value):
+    if value == NONE_VALUE:
+        return NONE_VALUE
+    else:
+        return datetime.date.strftime(value,"%Y-%m-%d")
+
+def compare_date(value, value_to_compare):
+    return value == value_to_compare 
 
 def compare_text(value, value_to_compare):
     return value_to_compare.lower() in value.lower()
@@ -174,6 +185,10 @@ class Feature():
         elif type_name == FLOAT_TYPE:
             self.format_function = format_float
             self.compare_function = compare_float
+        elif type_name == DATE_TYPE:
+            self.format_function = format_date
+            self.compare_function = compare_date
+            self._usable = False
         else:
             self.format_function = str
             self.compare_function = compare
@@ -210,7 +225,10 @@ class Feature():
         Is discarded feature?
     """   
     def is_usable(self):
-        return self._usable
+        if self.get_type() == DATE_TYPE: #Date cannot be a feature for model training
+            return False
+        else:
+            return self._usable
     
     """
         Is virtual feature?
@@ -246,7 +264,7 @@ class Feature():
         Set as target allowed?
     """
     def target_allowed(self):
-        allowed = not (self.get_type() == TEXT_TYPE and not self.has_class())
+        allowed = not (self.get_type() == TEXT_TYPE and not self.has_class() or self.get_type() == DATE_TYPE)
         return allowed
     
     # reshape the header for display
@@ -358,7 +376,7 @@ class Feature():
     def get_distribution_stats_by(self,feature,centile=False,filter_function=None):
         result = []
         for category in feature.classes:
-            group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and dataset.has_value(self.name,row_index) and self.compare_function(dataset.get_value(feature.name,row_index),category)
+            group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and dataset.has_value(self.name,row_index) and feature.compare_function(dataset.get_value(feature.name,row_index),category)
             
             stats = self._compute_stats(group_filter_function)
             
@@ -370,6 +388,20 @@ class Feature():
                 stat_third_quartile = stats['3rd-quartile']
                 
                 result.append([stat_min,stat_first_quartile,stat_median, stat_third_quartile,stat_max])
+        return result
+    """
+        **PUBLIC**
+    """
+    def get_metric_by(self,feature,metric_function=sum,filter_function=None):
+        result = []
+        for category in feature.classes:
+            group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and dataset.has_value(self.name,row_index) and feature.compare_function(dataset.get_value(feature.name,row_index),category)
+            
+            group_metric = self.table.get_datastore().aggregate(self.name,metric_function,group_filter_function)
+            if group_metric == 0: #check if there is result, while sum([]) is 0
+                if self.table.get_datastore().aggregate(self.name,len,group_filter_function) == 0:
+                    continue
+            result.append([category,group_metric])
         return result
 
     """
@@ -435,8 +467,4 @@ class Feature():
                 reshaped_values.append(float(value))
         
         return reshaped_values
-    
-    """
-    *************************************************************************************
-    """
     
