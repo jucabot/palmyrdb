@@ -32,15 +32,7 @@ class FeatureDataSet():
     def has_value(self,feature_id,row_index):
         return self.get_value(feature_id,row_index) != NONE_VALUE
     
-    """
-    #A degager a terme
-    def get_values(self,name,row_ids=None):
-        if row_ids is not None:
-            rows = map(lambda row_id : self.get_value(name,row_id),row_ids)
-            return rows
-        else:
-            return self._dataset[name]
-    """
+    
     def _filter(self,feature_id,filter_function=None):
         if filter_function is None:
             values = filter (lambda v: v != NONE_VALUE, self._dataset[feature_id] )
