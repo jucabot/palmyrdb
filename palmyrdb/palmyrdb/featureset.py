@@ -7,6 +7,7 @@ import csv
 from json import dumps
 import uuid
 from palmyrdb.converter import DATE_TYPE, INT_TYPE, FLOAT_TYPE
+from palmyrdb import load_from_classname
 
 
 """
@@ -43,7 +44,8 @@ class FeatureTable():
         self.current_model = None
         self.filters = {}
         self.current_filter = None
-        self._datastore = memstore.FeatureDataSet(self) #should be loaded by configuration
+        self._datastore = load_from_classname(context['datastore-engine'])
+        self._datastore.init(self)
 
     def _get_next_seq_order(self):
         self._seq_order +=1

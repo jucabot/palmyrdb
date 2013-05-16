@@ -11,17 +11,17 @@ from palmyrdb.model import ModelInfo, CLASSIFICATION_MODEL, REGRESSION_MODEL
 from palmyrdb.script import compile_func_code
 
 
-
-
 class FeatureDataSet():
     _dataset = None
     _feature_set = None
     _row_count = None
     
-    def __init__(self,feature_set):
+    def __init__(self):
         self._dataset = {}
-        self._feature_set = feature_set
         self._row_count = 0
+        
+    def init(self,feature_set):
+        self._feature_set = feature_set
     
     def get_row_count(self):
         return self._row_count
@@ -35,15 +35,13 @@ class FeatureDataSet():
     
     def _filter(self,feature_id,filter_function=None):
         if filter_function is None:
-            values = filter (lambda v: v != NONE_VALUE, self._dataset[feature_id] )
+            values = filter(lambda v: v != NONE_VALUE, self._dataset[feature_id] )
         else:
             row_ids = []
             if filter_function is not None:
-                for row_index in range(self.get_row_count()): 
-                    if filter_function(self,row_index) == False:
-                        continue
-                    else:
-                        row_ids.append(row_index)
+                
+                row_ids = filter(lambda row_index : filter_function(self,row_index),range(self.get_row_count()))
+                
             else:
                 row_ids = range(self.get_row_count())
             values = map(lambda row_id : self.get_value(feature_id,row_id),row_ids)
@@ -71,9 +69,8 @@ class FeatureDataSet():
 
     
     def transform(self,feature_id,transform_function):
-        values = []
-        for row_index in range(self.get_row_count()):
-            values.append(transform_function(self,row_index))
+        values = map(lambda row_index : transform_function(self,row_index),range(self.get_row_count()))
+                
         self._dataset[feature_id] = values
      
     
