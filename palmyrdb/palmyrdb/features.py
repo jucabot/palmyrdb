@@ -123,7 +123,6 @@ class Feature():
     seq_order = 0
     _is_class = None
     is_sparse = None
-    _usable = None
     classes = None                #heavy?
     common_value = None
     min_value = None
@@ -157,7 +156,6 @@ class Feature():
         self.name = name
         self._type_name = type_name
         self._virtual = virtual
-        self._usable = True
         self.seq_order = 0
         self._is_class = None
         self.is_sparse = None
@@ -188,7 +186,6 @@ class Feature():
         elif type_name == DATE_TYPE:
             self.format_function = format_date
             self.compare_function = compare_date
-            self._usable = False
         else:
             self.format_function = str
             self.compare_function = compare
@@ -200,7 +197,6 @@ class Feature():
             'name':self.name,
             'type': self._type_name,
             'virtual' : self._virtual,
-            'usable': self._usable,
             'seq' : self.seq_order,
             'has_class' : self._is_class,
             'sparse' : self.is_sparse,
@@ -221,15 +217,7 @@ class Feature():
             }
         return props
      
-    """
-        Is discarded feature?
-    """   
-    def is_usable(self):
-        if self.get_type() == DATE_TYPE: #Date cannot be a feature for model training
-            return False
-        else:
-            return self._usable
-    
+   
     """
         Is virtual feature?
     """ 
@@ -260,12 +248,7 @@ class Feature():
     def has_class(self):
         return self._is_class
 
-    """
-        Set as target allowed?
-    """
-    def target_allowed(self):
-        allowed = not (self.get_type() == TEXT_TYPE and not self.has_class() or self.get_type() == DATE_TYPE)
-        return allowed
+  
     
     # reshape the header for display
     def _reshape_header(self):
