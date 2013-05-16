@@ -21,12 +21,21 @@ def format_float(value):
         return float(value)
 
 def format_date(value):
+    """
     if value == NONE_VALUE:
         return NONE_VALUE
     else:
         return datetime.date.strftime(value,"%Y-%m-%d")
+    """
+    return value
 
 def compare_date(value, value_to_compare):
+    
+    if isinstance(value, str):
+        value = datetime.datetime.strptime(value,"%Y-%m-%d").date()
+    if isinstance(value_to_compare, str):
+        value_to_compare = datetime.datetime.strptime(value_to_compare,"%Y-%m-%d").date()
+    
     return value == value_to_compare 
 
 def compare_text(value, value_to_compare):
@@ -57,6 +66,26 @@ def _freqdist(values):
             freq[value] = round(freq[value]/values_len * 100,2)
         
         return freq
+    
+def _date_freqdist(values):
+        freq = {}
+        values_len = float(len(values))
+        for value in values:
+            
+            try:
+                freq[datetime.date.strftime(value,"%Y-%m-%d")] +=1
+            except KeyError:
+                freq[datetime.date.strftime(value,"%Y-%m-%d")] = 1
+        #remove undefined values
+        if NONE_VALUE in freq:
+            values_len -= freq[NONE_VALUE]
+            del freq[NONE_VALUE]
+        
+        for value, count in freq.items():
+            freq[value] = round(freq[value]/values_len * 100,2)
+        
+        return freq    
+
 
 def _compute_stats_function(values):
     stats = None
@@ -275,6 +304,8 @@ class Feature():
 
         if self.get_type() == TEXT_TYPE:
                 df_function = _word_tfidf_dist
+        elif self.get_type() == DATE_TYPE:
+                df_function = _date_freqdist
         else:
                 df_function = _freqdist
         return self.table.get_datastore().aggregate(self.name,df_function,filter_function)
