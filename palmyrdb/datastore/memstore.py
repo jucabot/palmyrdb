@@ -39,6 +39,24 @@ class FeatureDataSet():
         
         return values
     
+    
+    def group_by(self,feature, grouping_feature,metric_function=sum,filter_function=None):
+        result = []
+        for category in grouping_feature.classes:
+            group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and dataset.has_value(feature.name,row_index) and grouping_feature.compare_function(dataset.get_value(grouping_feature.name,row_index),category)
+            
+            group_metric = self.aggregate(feature.name,metric_function,group_filter_function)
+            
+            if group_metric is None:
+                continue
+            
+            if group_metric == 0: #check if there is result, while sum([]) is 0
+                if self.aggregate(feature.name,len,group_filter_function) == 0:
+                    continue
+            result.append([category,group_metric])
+        return result
+    
+    
     def aggregate(self,feature_id,aggregation_function,filter_function=None):
         if filter_function is None:
             result = aggregation_function(self._dataset[feature_id])

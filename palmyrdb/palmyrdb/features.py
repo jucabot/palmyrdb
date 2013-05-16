@@ -297,18 +297,21 @@ class Feature():
             headers.append(header)
         
         return headers
+    
+    def get_frequency_distribution_function(self):
+        if self.get_type() == TEXT_TYPE:
+            df_function = _word_tfidf_dist
+        elif self.get_type() == DATE_TYPE:
+            df_function = _date_freqdist
+        else:
+            df_function = _freqdist
+        return df_function
     """
         **PUBLIC**
     """
     def get_frequency_distribution(self,filter_function=None):
 
-        if self.get_type() == TEXT_TYPE:
-                df_function = _word_tfidf_dist
-        elif self.get_type() == DATE_TYPE:
-                df_function = _date_freqdist
-        else:
-                df_function = _freqdist
-        return self.table.get_datastore().aggregate(self.name,df_function,filter_function)
+        return self.table.get_datastore().aggregate(self.name,self.get_frequency_distribution_function(),filter_function)
             
     """
         Auto discover the feature properties while creating the analysis object
@@ -372,51 +375,37 @@ class Feature():
         **PUBLIC**
     """
     def get_distribution_by(self, feature,centile=True,filter_function=None):
-        freq_dist = []
         
-        for category in feature.classes:
-                group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and  feature.compare_function(dataset.get_value(feature.name,row_index),category) 
-                group_freq = self.get_frequency_distribution(group_filter_function)
-                
-                serie = {
-                         'name' : feature.name + "=" + unicode(int(category) if feature.get_type()==INT_TYPE else category),
-                         'data' : map(lambda category : round(group_freq[category]*100 if centile else group_freq[category] ,4) if category in group_freq else 0 ,self.classes)
-                         }
-                freq_dist.append(serie)
-        return freq_dist
+        stats = self.table.get_datastore().group_by(self,feature,self.get_frequency_distribution_function(),filter_function)
+        
+        def format_stat(stat):
+            serie = {
+                     'name' : feature.name + "=" + unicode(int(stat[0]) if feature.get_type()==INT_TYPE else stat[0]),
+                         'data' : map(lambda category : round(stat[1][category]*100 if centile else stat[1][category] ,4) if category in stat[1] else 0 ,self.classes)
+                    }
+            return serie
+        
+        return map(format_stat,stats)
+        
+       
     """
         **PUBLIC**
     """
     def get_distribution_stats_by(self,feature,centile=False,filter_function=None):
-        result = []
-        for category in feature.classes:
-            group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and dataset.has_value(self.name,row_index) and feature.compare_function(dataset.get_value(feature.name,row_index),category)
-            
-            stats = self._compute_stats(group_filter_function)
-            
-            if stats is not None:
-                stat_min = stats['min']
-                stat_max = stats['max']
-                stat_median = stats['median']
-                stat_first_quartile = stats['1st-quartile']
-                stat_third_quartile = stats['3rd-quartile']
-                
-                result.append([stat_min,stat_first_quartile,stat_median, stat_third_quartile,stat_max])
-        return result
+        
+        stats = self.table.get_datastore().group_by(self,feature,_compute_stats_function,filter_function)
+        
+        def format_stat(stat):
+            return [stat[1]['min'],stat[1]['1st-quartile'],stat[1]['median'], stat[1]['3rd-quartile'],stat[1]['max']]
+        
+        return map(format_stat,stats)
+  
     """
         **PUBLIC**
     """
     def get_metric_by(self,feature,metric_function=sum,filter_function=None):
-        result = []
-        for category in feature.classes:
-            group_filter_function = lambda dataset,row_index : (filter_function(dataset,row_index) if filter_function is not None else True) and dataset.has_value(self.name,row_index) and feature.compare_function(dataset.get_value(feature.name,row_index),category)
-            
-            group_metric = self.table.get_datastore().aggregate(self.name,metric_function,group_filter_function)
-            if group_metric == 0: #check if there is result, while sum([]) is 0
-                if self.table.get_datastore().aggregate(self.name,len,group_filter_function) == 0:
-                    continue
-            result.append([category,group_metric])
-        return result
+        
+        return self.table.get_datastore().group_by(self,feature,metric_function,filter_function)
 
     """
         Update virtual feature and compute the feature values (long task)
