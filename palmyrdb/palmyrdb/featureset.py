@@ -5,6 +5,7 @@ import uuid
 from palmyrdb.converter import DATE_TYPE, INT_TYPE, FLOAT_TYPE
 from palmyrdb import load_from_classname
 from datastore.memstore import FeatureDataSet
+import cjson
 
 
 """
@@ -35,14 +36,24 @@ class FeatureTable():
         self.params = {}
         self.filters = {}
         self.current_filter = None
-        self._datastore = FeatureDataSet() #load_from_classname(context['datastore-engine'])
-        self._datastore.init(self)
+        self._datastore = None #lazy loading
+
+
+    def save(self):
+        return self
+    
+    def load(self):
+        return self
 
     def _get_next_seq_order(self):
         self._seq_order +=1
         return self._seq_order
     
     def get_datastore(self):
+        if self._datastore is None:
+            self._datastore = FeatureDataSet() #load_from_classname(context['datastore-engine'])
+            self._datastore.init(self)
+            self._datastore.load()
         return self._datastore
     
     def _get_virtual_features(self):
@@ -97,7 +108,7 @@ class FeatureTable():
         self._features[name] = feature
     
     def get_row_count(self):
-        return self._datastore.get_row_count()
+        return self.get_datastore().get_row_count()
    
     """
         Return the name of the features in the dataset
@@ -125,7 +136,7 @@ class FeatureTable():
     """
     def add_feature(self,name,type_name,function_code):
         
-        self._datastore.transform(name, compile_func_code(function_code))
+        self.get_datastore().transform(name, compile_func_code(function_code))
         
         return self._load_feature(name, type_name, virtual=True, virtual_function_code=function_code)
     
@@ -156,16 +167,8 @@ class FeatureTable():
             
         return feature
     
-    """
-        Clone the feature set metadata
-    """
-    """    
-    def clone(self):
-        fs_clone =  copy(self)
-        #fs_clone._datastore = memstore.FeatureDataSet(fs_clone) #should be loaded by configuration
-
-        return fs_clone
-    """
+    
+  
     """
         Initialize a feature set and load data to the data store from a CSV file based on headers
         (long running)
