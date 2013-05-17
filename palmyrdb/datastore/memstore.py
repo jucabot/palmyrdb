@@ -43,29 +43,21 @@ class FeatureDataSet():
         return self.get_value(feature_id,row_index) != NONE_VALUE
     
     
-    def _filter(self,feature_id,filter_function=None,values=None):
-        
-        sub_set = True
-        if values is None:
-            values = self._dataset[feature_id]
-            sub_set = False
-            
-        if filter_function is None:
-            values = filter(lambda v: v != NONE_VALUE, values )
+    def _filter_ids(self,filter_function=None):
+        row_ids = []
+        if filter_function is not None:
+            row_ids = filter(lambda row_index : filter_function(self,row_index),range(self.get_row_count()))
         else:
-            row_ids = []
-            if filter_function is not None:
-                
-                if sub_set:
-                    def values_walker(values):
-                        for value in set(values):
-                            yield self._dataset[feature_id].index(value)
-                    row_ids = filter(lambda row_index : filter_function(self,row_index),values_walker(values))
-                else:
-                    row_ids = filter(lambda row_index : filter_function(self,row_index),range(self.get_row_count()))
-            else:
-                row_ids = range(self.get_row_count())
-            values = map(lambda row_id : self.get_value(feature_id,row_id),row_ids)
+            row_ids = range(self.get_row_count())
+        return row_ids
+    
+    def _filter(self,feature_id,filter_function=None):
+        
+           
+        if filter_function is None:
+            values = filter(lambda v: v != NONE_VALUE, self._dataset[feature_id] )
+        else:
+            values = map(lambda row_id : self.get_value(feature_id,row_id),self._filter_ids(filter_function))
         
         return values
     
@@ -73,36 +65,37 @@ class FeatureDataSet():
     def group_by(self,feature, grouping_feature,metric_function=sum,filter_function=None):
         result = []
         
-        if filter_function is not None:
-            def global_filter_function(dataset,row_index):
+        def global_filter_function(dataset,row_index):
                 return (filter_function(dataset,row_index) if filter_function is not None else True) and dataset.has_value(feature.name,row_index)
             
-            filtered_values = self._filter(feature.name, global_filter_function)
-        else:
-            filtered_values = None
-            
-        for category in grouping_feature.classes:
-            group_filter_function =  lambda dataset, row_index : grouping_feature.compare_function(dataset.get_value(grouping_feature.name,row_index),category)
-            
-            group_metric = self.aggregate(feature.name,metric_function,group_filter_function,values=filtered_values)
-            
-            if group_metric is None:
+        row_ids = self._filter_ids(filter_function)
+        
+        values = map(lambda row_id : (self.get_value(grouping_feature.name,row_id),self.get_value(feature.name,row_id)),self._filter_ids(filter_function))
+        groups = {}
+        for (group,value) in values:
+            if value == NONE_VALUE:
                 continue
+            try:
+                groups[group].append(value)
+            except KeyError:
+                groups[group] = [value]
+        
+        #remove undefined values
+        if NONE_VALUE in groups:
+            del groups[NONE_VALUE]
             
-            if group_metric == 0: #check if there is result, while sum([]) is 0
-                if self.aggregate(feature.name,len,group_filter_function,values=filtered_values) == 0:
-                    continue
-            result.append([category,group_metric])
+        for group,values in groups.items():
+            result.append([group,metric_function(values)])
         return result
     
     
-    def aggregate(self,feature_id,aggregation_function,filter_function=None,values=None):
-        if values is None:
-            values = self._dataset[feature_id]
+    def aggregate(self,feature_id,aggregation_function,filter_function=None):
+       
+        values = self._dataset[feature_id]
         if filter_function is None:
             result = aggregation_function(values)
         else:
-            result = aggregation_function(self._filter(feature_id,filter_function,values))
+            result = aggregation_function(self._filter(feature_id,filter_function))
         return result
     
     def aggregate_list(self,feature_ids,aggregation_function,filter_function=None):

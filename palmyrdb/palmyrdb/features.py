@@ -396,16 +396,22 @@ class Feature():
         stats = self.table.get_datastore().group_by(self,feature,_compute_stats_function,filter_function)
         
         def format_stat(stat):
-            return [stat[1]['min'],stat[1]['1st-quartile'],stat[1]['median'], stat[1]['3rd-quartile'],stat[1]['max']]
-        
-        return map(format_stat,stats)
+            if stat[1] is not None:
+                return [stat[1]['min'],stat[1]['1st-quartile'],stat[1]['median'], stat[1]['3rd-quartile'],stat[1]['max']]
+            else:
+                return None
+        return filter(lambda item : item is not None,map(format_stat,stats))
   
     """
         **PUBLIC**
     """
     def get_metric_by(self,feature,metric_function=sum,filter_function=None):
         
-        return self.table.get_datastore().group_by(self,feature,metric_function,filter_function)
+        values = self.table.get_datastore().group_by(self,feature,metric_function,filter_function)
+        
+        if feature.get_type() == DATE_TYPE:
+            values = map(lambda (group,value) : (datetime.date.strftime(group,"%Y-%m-%d"),value),values)
+        return values
 
     """
         Update virtual feature and compute the feature values (long task)
