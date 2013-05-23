@@ -3,7 +3,7 @@ from palmyrdb.converter import FLOAT_TYPE, INT_TYPE, TEXT_TYPE,NONE_VALUE,\
 from palmyrdb.script import _exec_func_code, compile_func_code
 from numpy.ma.core import mean, std
 from numpy.lib.function_base import median, percentile
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.feature_extraction.text import Vectorizer
 import uuid
 import datetime
 
@@ -127,7 +127,7 @@ def _word_tfidf_dist(documents):
     if len(documents) > 0: 
         if _check_is_sentence(documents): #if document contains only 1 or 2 or 3 chars --> acronyms
             try:
-                text_analyzer = TfidfVectorizer(ngram_range=(1,2),max_features=50)
+                text_analyzer = Vectorizer(ngram_range=(1,2),max_features=50)
                 matrix = text_analyzer.fit_transform(documents).todense()
                 
                 for vocabulary in text_analyzer.vocabulary_.items():
@@ -343,7 +343,7 @@ class Feature():
         #compute the density distribution (count or tfidf)
         self.freq_dist = self.get_frequency_distribution()
         if self.get_type() == TEXT_TYPE:
-            wbag_function = lambda docs : TfidfVectorizer(ngram_range=(1,2),max_features=50).fit(docs) if _check_is_sentence(docs) else None
+            wbag_function = lambda docs : Vectorizer(ngram_range=(1,2),max_features=50).fit(docs) if _check_is_sentence(docs) else None
             self.text_analyzer = self.table.get_datastore().aggregate(self.name,wbag_function)
         
         #is completely dense
